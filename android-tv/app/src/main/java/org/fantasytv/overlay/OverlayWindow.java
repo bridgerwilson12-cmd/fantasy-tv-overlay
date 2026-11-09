@@ -6,7 +6,9 @@ import android.os.Handler;
 import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.WindowManager;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 
 /** Only the visible overlay takes focus; removing it releases all keys immediately. */
 final class OverlayWindow implements ScoreOverlayView.Actions {
@@ -14,6 +16,9 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
     private final Handler main;
     private final WindowManager manager;
     private final LinkedHashSet<String> pending = new LinkedHashSet<>();
+    private final Map<String, Popup> reasons = new HashMap<>();
+    private Popup popup = Popup.check("", 5000);
+    private long lastShown = SystemClock.elapsedRealtime();
     private FeedModels.Feed feed;
     private ScoreOverlayView view;
     private String selected;
@@ -33,6 +38,8 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
         this.manager = context.getSystemService(WindowManager.class);
     }
     void setInteractive(boolean interactive) { this.interactive = interactive; }
+    private boolean teamNames = true;
+    void setTeamNames(boolean teamNames) { this.teamNames = teamNames; render(); }
     void update(FeedModels.Feed feed) {
         this.feed = feed; lastArrival = SystemClock.elapsedRealtime();
         if (view != null) {
@@ -40,15 +47,28 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
             else render();
         }
     }
-    void enqueue(String id) {
+    void enqueue(String id) { enqueue(id, Popup.check("", 5000)); }
+    void enqueue(String id, Popup reason) {
         if (!fresh() || feed.find(id) == null) return;
         if (view != null && id.equals(selected)) {
-            if (!sidebar) expiresAt = SystemClock.elapsedRealtime() + 5000;
+            if (!sidebar) {
+                // A fresh score replaces the highlight on screen rather than adding to a stale one.
+                popup = reason.isScore() || !popup.isScore() ? reason : popup;
+                expiresAt = SystemClock.elapsedRealtime() + popup.durationMs;
+                lastShown = SystemClock.elapsedRealtime(); render();
+            }
             return;
         }
-        if (pending.size() < 16) pending.add(id);
+        if (pending.size() < 16 || pending.contains(id)) {
+            pending.add(id);
+            Popup queued = reasons.get(id);
+            reasons.put(id, queued == null ? reason : queued.merge(reason));
+        }
         if (view == null) next();
     }
+    /** elapsedRealtime of the last popup shown, used for the quiet-period check-in. */
+    long lastShown() { return lastShown; }
+    boolean showing() { return view != null; }
     private boolean fresh() {
         return feed != null && feed.fresh(System.currentTimeMillis() / 1000.0) && SystemClock.elapsedRealtime() - lastArrival <= 30_000;
     }
@@ -56,7 +76,8 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
         if (!fresh()) { clear(); return; }
         while (!pending.isEmpty()) {
             String id = pending.iterator().next(); pending.remove(id);
-            if (feed.find(id) != null) { selected = id; sidebar = false; rowOffset = 0; show(); return; }
+            Popup reason = reasons.remove(id);
+            if (feed.find(id) != null) { selected = id; popup = reason == null ? Popup.check("", 5000) : reason; sidebar = false; rowOffset = 0; show(); return; }
         }
     }
     private void show() {
@@ -66,7 +87,8 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
                 view = new ScoreOverlayView(context, this);
                 manager.addView(view, layout());
             } else manager.updateViewLayout(view, layout());
-            expiresAt = SystemClock.elapsedRealtime() + 5000;
+            expiresAt = SystemClock.elapsedRealtime() + (sidebar ? 5000 : popup.durationMs);
+            lastShown = SystemClock.elapsedRealtime();
             render();
             if (interactive || sidebar) view.requestFocus();
             main.removeCallbacks(timer); main.post(timer);
@@ -89,7 +111,7 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
     private void render() {
         if (view != null && feed != null) {
             FeedModels.League league = feed.find(selected);
-            if (league != null) view.setContent(feed, league, sidebar, rowOffset, interactive);
+            if (league != null) view.setContent(feed, league, sidebar, rowOffset, interactive, popup, teamNames);
         }
     }
     private void hide() {
@@ -99,13 +121,13 @@ final class OverlayWindow implements ScoreOverlayView.Actions {
             view = null;
         }
     }
-    void clear() { hide(); pending.clear(); selected = null; feed = null; sidebar = false; }
+    void clear() { hide(); pending.clear(); reasons.clear(); selected = null; feed = null; sidebar = false; }
     @Override public void openMatchup() {
         if (!fresh() || sidebar || !interactive) return;
         sidebar = true; rowOffset = 0; show();
     }
     @Override public void close() {
-        pending.clear(); hide(); sidebar = false; selected = null;
+        pending.clear(); reasons.clear(); hide(); sidebar = false; selected = null;
     }
     @Override public void league(int direction) {
         if (!sidebar || !fresh()) return;

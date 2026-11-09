@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="score_key_label">Fantasy TV score button</string>
+    <string name="score_key_description">Shows your fantasy score when you press one remote button you choose, and when apps you list (like DirecTV or Prime Video) open. It only sees which app is in front and that one button. It cannot read what is on screen. Score alerts must be running.</string>
+</resources>

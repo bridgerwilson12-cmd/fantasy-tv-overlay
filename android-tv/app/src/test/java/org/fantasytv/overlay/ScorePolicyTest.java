@@ -21,6 +21,15 @@ public class ScorePolicyTest {
         assertEquals(Arrays.asList("a"),p.accept(feed(league("a",10.1,19.9,30))));
         assertTrue(p.accept(feed(league("a",10.1,19.9,30))).isEmpty());
     }
+    @Test public void deltaSaysWhichSideScored() {
+        ScorePolicy p = new ScorePolicy(); p.accept(feed(league("a",10,20,30)));
+        p.accept(feed(league("a",16.4,20,30)));
+        assertArrayEquals(new double[]{6.4, 0}, p.delta("a"), 1e-9);
+        p.accept(feed(league("a",16.4,19,30)));
+        assertArrayEquals(new double[]{0, -1}, p.delta("a"), 1e-9);
+        p.accept(feed(league("a",16.4,19,30)));
+        assertArrayEquals(new double[]{0, 0}, p.delta("a"), 1e-9);
+    }
     @Test public void projectionChangesNeverAlert() {
         ScorePolicy p = new ScorePolicy(); p.accept(feed(league("a",10,20,30)));
         assertTrue(p.accept(feed(league("a",10,20,99))).isEmpty());

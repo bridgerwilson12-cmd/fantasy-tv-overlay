@@ -13,6 +13,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +26,13 @@ public final class OverlayService extends Service {
     private static final String CHANNEL = "fantasy_tv_active";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ScorePolicy policy = new ScorePolicy();
+    private final GamePolicy games = new GamePolicy();
+    private static final long QUIET_CHECK_MS = 15 * 60_000L;
+    /** Same-process handle for the optional remote-button / app-open helper. Never exported. */
+    private static volatile OverlayService running;
+    private volatile boolean quarterAlerts = true, quietCheck = true;
+    private String pendingCaption = "";
+    private long pendingDuration = 5000;
     private ScheduledExecutorService worker;
     private OverlayWindow window;
     private FeedModels.Feed current;
@@ -45,6 +53,19 @@ public final class OverlayService extends Service {
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
         else startForeground(1, notification);
         window = new OverlayWindow(this, main);
+        running = this;
+    }
+    /** Show the current matchup now (remote button, app opened). No-op unless alerts are running. */
+    static void showNow(String caption, long durationMs) {
+        OverlayService service = running;
+        if (service == null) return;
+        service.main.post(() -> service.showCurrent(caption, durationMs));
+    }
+    static boolean isRunning() { return running != null && running.worker != null; }
+    private void showCurrent(String caption, long durationMs) {
+        if (destroyed || window == null) return;
+        if (current != null && current.fresh(System.currentTimeMillis() / 1000.0)) window.enqueue(current.leagues.get(0).id, Popup.check(caption, durationMs));
+        else { previewPending = true; pendingCaption = caption; pendingDuration = durationMs; }
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null || ACTION_STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
@@ -52,21 +73,24 @@ public final class OverlayService extends Service {
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return START_NOT_STICKY; }
         final ConfigStore config = new ConfigStore(this);
         final boolean demo = config.demo(), interactive = config.interactive();
+        quarterAlerts = config.quarterAlerts(); quietCheck = config.quietCheck();
+        boolean teamNames = config.teamNames();
+        if (window != null) window.setTeamNames(teamNames);
         final String endpoint = config.url(), token;
         try { token = config.token(); if (!demo) { EndpointPolicy.validate(endpoint); if (token.length() < 32) throw new IllegalArgumentException("Invalid private feed token"); } }
         catch (Exception e) { stopSelf(); return START_NOT_STICKY; }
         if (worker != null && endpoint.equals(activeEndpoint) && token.equals(activeToken) && demo == activeDemo && interactive == activeInteractive) {
             if (ACTION_PREVIEW.equals(intent.getAction())) {
-                if (current != null && current.fresh(System.currentTimeMillis() / 1000.0)) window.enqueue(current.leagues.get(0).id);
-                else previewPending = true;
+                showCurrent("SCORE CHECK", 5000);
             }
             return START_NOT_STICKY;
         }
         activeEndpoint = endpoint; activeToken = token; activeDemo = demo; activeInteractive = interactive;
         if (worker != null) worker.shutdownNow();
         generation++; final long session = generation;
-        current = null; policy.reset(); window.clear(); window.setInteractive(interactive);
-        previewPending = ACTION_PREVIEW.equals(intent.getAction()); demoStart = android.os.SystemClock.elapsedRealtime();
+        current = null; policy.reset(); games.reset(); window.clear(); window.setInteractive(interactive);
+        previewPending = ACTION_PREVIEW.equals(intent.getAction()); pendingCaption = previewPending ? "SCORE CHECK" : ""; pendingDuration = 5000;
+        final long started = android.os.SystemClock.elapsedRealtime(); demoStart = android.os.SystemClock.elapsedRealtime();
         worker = Executors.newSingleThreadScheduledExecutor();
         worker.scheduleWithFixedDelay(() -> {
             try {
@@ -78,9 +102,15 @@ public final class OverlayService extends Service {
                     if (!feed.fresh(System.currentTimeMillis() / 1000.0)) { unavailable(); return; }
                     current = feed;
                     List<String> changes = policy.accept(feed);
+                    Map<String, String> milestones = games.accept(feed);
                     window.update(feed);
-                    if (previewPending) { previewPending = false; window.enqueue(feed.leagues.get(0).id); }
-                    for (String id : changes) window.enqueue(id);
+                    if (previewPending) { previewPending = false; window.enqueue(feed.leagues.get(0).id, Popup.check(pendingCaption, pendingDuration)); }
+                    for (String id : changes) window.enqueue(id, Popup.score(policy.delta(id)));
+                    if (quarterAlerts) for (Map.Entry<String, String> event : milestones.entrySet()) window.enqueue(event.getKey(), Popup.check(event.getValue(), 5000));
+                    long now = android.os.SystemClock.elapsedRealtime();
+                    if (quietCheck && !window.showing() && now - window.lastShown() >= QUIET_CHECK_MS && now - started >= QUIET_CHECK_MS) {
+                        for (FeedModels.League league : feed.leagues) if (anyLive(league)) { window.enqueue(league.id, Popup.check("15-MINUTE CHECK", 5000)); break; }
+                    }
                 });
             } catch (Exception e) {
                 // Deliberately no exception details: URLs, response bodies and secrets never enter logs.
@@ -89,9 +119,14 @@ public final class OverlayService extends Service {
         }, 0, 5, TimeUnit.SECONDS);
         return START_NOT_STICKY;
     }
+    private static boolean anyLive(FeedModels.League league) {
+        for (FeedModels.Team team : new FeedModels.Team[]{league.mine, league.opponent})
+            for (FeedModels.Player player : team.starters) if ("live".equals(player.gameState) || player.live) return true;
+        return false;
+    }
     private void unavailable() { current = null; policy.reset(); window.clear(); }
     @Override public void onDestroy() {
-        destroyed = true; generation++;
+        destroyed = true; generation++; if (running == this) running = null;
         if (worker != null) worker.shutdownNow();
         main.removeCallbacksAndMessages(null);
         if (window != null) window.clear();

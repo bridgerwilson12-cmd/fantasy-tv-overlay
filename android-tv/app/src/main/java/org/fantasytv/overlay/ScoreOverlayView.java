@@ -28,6 +28,8 @@ final class ScoreOverlayView extends View {
     private FeedModels.Feed feed;
     private FeedModels.League league;
     private boolean sidebar, interactive;
+    private Popup popup = Popup.check("", 5000);
+    private boolean teamNames = true;
     private int rowOffset;
     private static final int WHITE = Color.rgb(244,246,249), MUTED = Color.rgb(172,183,199), FAINT = Color.rgb(120,134,151),
         MINT = Color.rgb(139,221,181), RED = Color.rgb(201,120,123);
@@ -51,9 +53,11 @@ final class ScoreOverlayView extends View {
         try { return Typeface.createFromAsset(context.getAssets(),asset); }
         catch (RuntimeException e) { return fallback; }
     }
-    void setContent(FeedModels.Feed feed, FeedModels.League league, boolean sidebar, int rowOffset, boolean interactive) {
+    void setContent(FeedModels.Feed feed, FeedModels.League league, boolean sidebar, int rowOffset, boolean interactive, Popup popup, boolean teamNames) {
+        this.teamNames = teamNames;
+        this.popup = popup == null ? Popup.check("", 5000) : popup;
         this.feed = feed; this.league = league; this.sidebar = sidebar; this.rowOffset = rowOffset; this.interactive = interactive;
-        setContentDescription("Fantasy matchup " + league.mine.owner + " versus " + league.opponent.owner); invalidate();
+        setContentDescription("Fantasy matchup " + league.mine.label(teamNames) + " versus " + league.opponent.label(teamNames)); invalidate();
     }
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -68,15 +72,31 @@ final class ScoreOverlayView extends View {
         text(c, league.name.toUpperCase(Locale.ROOT),24,15,14,MUTED,340,semibold);
         text(c, league.week > 0 ? "WEEK " + league.week : "MATCHUP",430,17,12,FAINT,90,semibold);
         rect(c,24,37,492,1,0x18DCE8EE); rect(c,270,49,1,105,0x12DCE8EE);
-        text(c,league.mine.owner,24,54,23,WHITE,222,body);
-        text(c,league.opponent.owner,294,54,23,MUTED,222,body);
-        total(c,league.mine.score,22,85,68,230);
-        total(c,league.opponent.score,292,85,68,230);
+        double mineDelta = popup.mineDelta, oppDelta = popup.opponentDelta;
+        boolean mineMoved = Math.abs(mineDelta) > 1e-9, oppMoved = Math.abs(oppDelta) > 1e-9;
+        // The side that scored glows mint (red for a correction down); the other side steps back.
+        if (mineMoved) scorer(c,24,mineDelta);
+        if (oppMoved) scorer(c,294,oppDelta);
+        boolean either = mineMoved || oppMoved;
+        text(c,league.mine.label(teamNames),24,54,23,mineMoved ? tone(mineDelta) : either ? MUTED : WHITE,222,body);
+        text(c,league.opponent.label(teamNames),294,54,23,oppMoved ? tone(oppDelta) : MUTED,222,body);
+        float mineWidth = total(c,league.mine.score,22,85,68,230,either && !mineMoved ? MUTED : WHITE);
+        float oppWidth = total(c,league.opponent.score,292,85,68,230,either && !oppMoved ? MUTED : WHITE);
+        if (mineMoved) text(c,signed(mineDelta),22 + mineWidth + 10,104,28,tone(mineDelta),Math.max(40,236 - mineWidth),semibold);
+        if (oppMoved) text(c,signed(oppDelta),292 + oppWidth + 10,104,28,tone(oppDelta),Math.max(40,236 - oppWidth),semibold);
         text(c,"Estimated win chance",24,160,14,MUTED,492,body);
         probability(c,24,183,492,league.probability,false);
-        if (interactive) button(c);
-        else text(c,"FANTASY TV  ·  LIVE SCORE UPDATE",24,255,12,MUTED,492,semibold);
+        String footer = popup.caption.isEmpty() ? "LIVE SCORE UPDATE" : popup.caption;
+        if (interactive) { button(c); if (!popup.caption.isEmpty()) text(c,footer,24,306,12,MUTED,492,semibold); }
+        else text(c,"FANTASY TV  ·  " + footer,24,255,12,MUTED,492,semibold);
     }
+    private void scorer(Canvas c, float x, double delta) {
+        int color = tone(delta);
+        rect(c,x - 10,46,256,112,(color & 0x00FFFFFF) | 0x1C000000);
+        rect(c,x - 10,46,4,112,color);
+    }
+    private static int tone(double delta) { return delta < 0 ? RED : MINT; }
+    private static String signed(double delta) { return (delta > 0 ? "+" : "−") + String.format(Locale.US,"%.2f",Math.abs(delta)); }
     private void button(Canvas c) {
         paint.setColor(0x30000000); c.drawRoundRect(new RectF(24,247,268,295),10,10,paint);
         paint.setShader(new LinearGradient(0,244,0,292,0xFFF8F6ED,0xFFE5E9E4,Shader.TileMode.CLAMP));
@@ -115,7 +135,7 @@ final class ScoreOverlayView extends View {
         text(c,"LEFT / RIGHT  Switch league",358,1038,11,MUTED,338,body);
     }
     private void header(Canvas c, FeedModels.Team team, int x) {
-        text(c,team.owner,x,116,23,WHITE,306,body); total(c,team.score,x - 2,150,60,306);
+        text(c,team.label(teamNames),x,116,23,WHITE,306,body); total(c,team.score,x - 2,150,60,306);
         text(c,"PROJ",x,215,10,FAINT,44,body);
         text(c,number(team.projection,2),x + 56,210,16,MUTED,250,semibold);
     }
@@ -161,10 +181,13 @@ final class ScoreOverlayView extends View {
     private static String number(Double value, int digits) {
         return value == null || !Double.isFinite(value) || Math.abs(value) > 9999 ? "—" : String.format(Locale.US,"%." + digits + "f",value);
     }
-    private void total(Canvas c, double value, float x, float y, float size, float width) {
+    private float total(Canvas c, double value, float x, float y, float size, float width) { return total(c,value,x,y,size,width,WHITE); }
+    private float total(Canvas c, double value, float x, float y, float size, float width, int color) {
         String label = number(value,2); paint.setTypeface(totals); paint.setTextSize(size);
         while (paint.measureText(label) > width && size > 24) paint.setTextSize(--size);
-        text(c,label,x,y,size,WHITE,width,totals);
+        float drawn = Math.min(width, paint.measureText(label));
+        text(c,label,x,y,size,color,width,totals);
+        return drawn;
     }
     private void text(Canvas c, String value, float x, float y, float size, int color, float width, Typeface face) {
         paint.setColor(color); paint.setTypeface(face); paint.setTextSize(size);

@@ -8,17 +8,24 @@ import java.util.List;
 public final class FeedModels {
     private FeedModels() {}
     public static final class Player {
-        public final String slot, name, gameId;
+        public final String slot, name, gameId, gameState;
         public final Double points, projection;
         public final boolean live, onTv;
+        public final int period;
         public Player(String slot, String name, Double points, Double projection,
                       String gameId, boolean live, boolean onTv) {
+            this(slot, name, points, projection, gameId, live, onTv, "", 0);
+        }
+        /** gameState is live/final/scheduled or empty; period is the NFL quarter (5+ = overtime). */
+        public Player(String slot, String name, Double points, Double projection,
+                      String gameId, boolean live, boolean onTv, String gameState, int period) {
             this.slot = slot; this.name = name; this.points = points; this.projection = projection;
             this.gameId = gameId; this.live = live; this.onTv = onTv;
+            this.gameState = gameState == null ? "" : gameState; this.period = period;
         }
     }
     public static final class Team {
-        public final String id, owner;
+        public final String id, owner, teamName;
         public final double score;
         public final Double projection;
         public final List<Player> starters;
@@ -26,9 +33,15 @@ public final class FeedModels {
             this("", owner, score, projection, starters);
         }
         public Team(String id, String owner, double score, Double projection, List<Player> starters) {
+            this(id, owner, "", score, projection, starters);
+        }
+        public Team(String id, String owner, String teamName, double score, Double projection, List<Player> starters) {
+            this.teamName = teamName == null ? "" : teamName;
             this.id = id; this.owner = owner; this.score = score; this.projection = projection;
             this.starters = Collections.unmodifiableList(new ArrayList<>(starters));
         }
+        /** League team name when requested and known, otherwise the manager's name. */
+        public String label(boolean preferTeamName) { return preferTeamName && !teamName.isEmpty() ? teamName : owner; }
     }
     public static final class League {
         public final String id, name;

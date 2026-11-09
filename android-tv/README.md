@@ -54,6 +54,30 @@ Do not publish an ADB port to the internet. Disconnect development access after 
 
 A blank token field retains the saved token. **Erase private settings** removes all app settings and its Keystore entry. To replace a saved token, enter a new one. To revoke it, rotate the backend token as well; erasing a TV alone does not revoke a copied credential.
 
+## Extra popups, team names, and the score button
+
+- **Who scored:** the side whose total changed glows mint with its change (for example `+6.40`); a correction down shows in red.
+- **Team names:** shows each league team's name instead of the manager's name (setup checkbox, on by default).
+- **Quarter check-ins:** a popup at kickoff, the start of each quarter, overtime, and when a game goes final, for games involving either team's starters. Needs the updated backend (it adds `nflPeriod`).
+- **15-minute check-in:** if nothing has popped up for 15 minutes while a starter's game is live, the score shows once.
+- **Win chance:** the backend now estimates it from projections and game time left (`winProbSource: "fantasytv-normal-v1"`, see `backend/winprob.py`). Leagues without projections still show *Unavailable*.
+
+### Optional helper: app-open popups and a remote score button
+
+Turn on **Fantasy TV score button** under Settings → Accessibility. If the TV doesn't list it, use adb from your computer:
+
+```
+adb shell settings put secure enabled_accessibility_services org.fantasytv.overlay/org.fantasytv.overlay.ScoreKeyService
+adb shell settings put secure accessibility_enabled 1
+```
+
+The helper sees only which app is in front and the one button you pick; it cannot read the screen. Then:
+
+1. Leave **Pop up when one of these apps opens** checked. The defaults cover DirecTV and Prime Video. The setup page shows **Last app opened** so you can copy any other app's package name into the list.
+2. Press **Pick remote score button**, then press the button you want. Home, Back, the arrows, OK, and volume can't be used. That one button is taken over while alerts run; every other key works as normal.
+
+Both features do nothing unless score alerts are running.
+
 ## Data and privacy
 
 The feed contract is the shared normalized shape in the main repository. Important fields:
