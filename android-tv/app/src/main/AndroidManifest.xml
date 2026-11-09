@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Lets the optional app-open helper check whether a package is a real app (Android 11+). -->
+    <queries>
+        <intent><action android:name="android.intent.action.MAIN" /></intent>
+    </queries>
     <uses-feature android:name="android.software.leanback" android:required="true" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -30,6 +34,16 @@
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-started live fantasy score overlay while watching other TV apps; keeps a visible ongoing stop notification. Polls only a user-configured authenticated HTTPS feed." />
+        </service>
+        <service
+            android:name=".ScoreKeyService"
+            android:label="@string/score_key_label"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/score_key_service" />
         </service>
     </application>
 </manifest>

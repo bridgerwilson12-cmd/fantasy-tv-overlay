@@ -299,6 +299,17 @@ class BoundaryTests(unittest.TestCase):
         clock[0] += 91
         self.assertFalse(state.annotate(payload)["leagues"][0]["me"]["players"][1]["nflHighlightLive"])
 
+    def test_live_game_reports_quarter_and_clock(self):
+        state = GameStatus(lambda: {"season": {"year": 2026, "type": 2}, "week": {"number": 7},
+            "events": [{"id": "1001", "competitions": [{
+            "status": {"period": 3, "clock": 412.0, "type": {"state": "in"}},
+            "competitors": [{"team": {"id": "1", "abbreviation": "BUF"}}]}]}]}, lambda: 1000)
+        payload = scores(1000)
+        row = payload["leagues"][0]["me"]["players"][0]
+        row["proTeamId"] = 1
+        enriched = state.annotate(payload)["leagues"][0]["me"]["players"][0]
+        self.assertEqual((enriched["nflPeriod"], enriched["nflClock"]), (3, 412.0))
+
     def test_live_metadata_cannot_join_other_seasons_weeks_or_blank_identities(self):
         def source():
             return {"season": {"year": 2026, "type": 2}, "week": {"number": 7},

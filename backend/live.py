@@ -51,9 +51,13 @@ class GameStatus:
                             status = competition.get("status", {}).get("type", {})
                             phase = status.get("state")
                             state = "live" if phase == "in" else "final" if phase == "post" else "scheduled"
+                            period = competition.get("status", {}).get("period")
+                            clock = competition.get("status", {}).get("clock")
+                            period = period if type(period) is int and 0 <= period <= 10 else 0
+                            clock = float(clock) if isinstance(clock, (int, float)) and not isinstance(clock, bool) and 0 <= clock <= 900 else None
                             for competitor in competition.get("competitors", [])[:2]:
                                 team = competitor.get("team", {})
-                                value = (event_id, state, year, week_number)
+                                value = (event_id, state, year, week_number, period, clock)
                                 team_id = str(team.get("id", ""))
                                 abbr = str(team.get("abbreviation", "")).upper()
                                 keys = []
@@ -89,6 +93,8 @@ class GameStatus:
                         player.update(nflHighlightLive=bool(game and game[1] == "live" and available),
                                       nflGameState=game[1] if game else "unknown",
                                       nflAvailability="available" if available else "out",
-                                      gameId=game[0] if game else None)
+                                      gameId=game[0] if game else None,
+                                      nflPeriod=game[4] if game else 0,
+                                      nflClock=game[5] if game else None)
             result["nflLive"] = {"available": fresh, "updated": self.updated if fresh else None}
             return result

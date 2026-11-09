@@ -89,10 +89,17 @@ public final class FeedParser {
             boolean live = Boolean.TRUE.equals(player.opt("nflHighlightLive")) &&
                 "live".equals(text(player.opt("nflGameState"), 20).toLowerCase(Locale.ROOT)) && !UNAVAILABLE.contains(availability);
             String game = identifier(player.opt("gameId"));
+            String state = text(player.opt("nflGameState"), 20).toLowerCase(Locale.ROOT);
+            if (!state.equals("live") && !state.equals("final") && !state.equals("scheduled")) state = "";
+            Double period = number(player.opt("nflPeriod"));
+            int quarter = period != null && period >= 0 && period <= 10 && period == Math.floor(period) ? period.intValue() : 0;
             players.add(new FeedModels.Player(slot, text(player.opt("name"), 60), score(player.opt("pts")),
-                score(player.opt("proj")), game, live, live && !onTvGame.isEmpty() && onTvGame.equals(game)));
+                score(player.opt("proj")), game, live, live && !onTvGame.isEmpty() && onTvGame.equals(game),
+                game.isEmpty() ? "" : state, quarter));
         }
-        return new FeedModels.Team(identifier(item.opt("teamId")), owner, score(item.opt("score")), score(item.opt("proj")), players);
+        String teamName = text(item.opt("name"), 60);
+        if (teamName.equalsIgnoreCase("Fantasy team")) teamName = ""; // the backend's placeholder, not a real name
+        return new FeedModels.Team(identifier(item.opt("teamId")), owner, teamName, score(item.opt("score")), score(item.opt("proj")), players);
     }
     private static void checkDepth(String body) throws JSONException {
         int depth = 0; boolean string = false, escaped = false;

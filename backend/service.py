@@ -11,6 +11,7 @@ from .demo import scores as demo_scores
 from .http_client import ProviderError
 from .live import GameStatus
 from .providers import espn, sleeper
+from . import winprob
 
 
 ADAPTERS = {"espn": espn.fetch, "sleeper": sleeper.fetch}
@@ -57,7 +58,7 @@ class FeedService:
                 with ThreadPoolExecutor(max_workers=min(4, len(self.config.leagues))) as pool:
                     leagues = list(pool.map(read, self.config.leagues))
                 result = {"ok": True, "schemaVersion": 1, "updated": self.clock(), "leagues": leagues}
-                result = self.game_status.annotate(result)
+                result = winprob.annotate(self.game_status.annotate(result))
                 self.cached = result
             except ProviderError:
                 # Do not freshen an old score timestamp or return partial data

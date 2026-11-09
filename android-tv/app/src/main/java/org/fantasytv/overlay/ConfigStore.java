@@ -21,6 +21,22 @@ final class ConfigStore {
     String url() { return prefs.getString("feed_url", ""); }
     boolean demo() { return prefs.getBoolean("demo", true); }
     boolean interactive() { return prefs.getBoolean("interactive", true); }
+    // Extra popup options. Defaults: quarter and 15-minute check-ins on, app-open on (needs the
+    // optional accessibility service), no remote button until one is picked.
+    static final String DEFAULT_APPS = "com.att.tv, com.directv, com.amazon.avod, com.amazon.firebat, com.amazon.amazonvideo.livingroom";
+    boolean teamNames() { return prefs.getBoolean("team_names", true); }
+    boolean quarterAlerts() { return prefs.getBoolean("quarter_alerts", true); }
+    boolean quietCheck() { return prefs.getBoolean("quiet_check", true); }
+    boolean appOpenAlerts() { return prefs.getBoolean("app_open_alerts", true); }
+    String watchedApps() { return prefs.getString("watched_apps", DEFAULT_APPS); }
+    int scoreKey() { return prefs.getInt("score_key", 0); }
+    boolean capturingKey() { return prefs.getBoolean("capture_key", false); }
+    String lastApp() { return prefs.getString("last_app", ""); }
+    void setFlag(String name, boolean value) { prefs.edit().putBoolean(name, value).apply(); }
+    void setWatchedApps(String value) { prefs.edit().putString("watched_apps", value.trim().isEmpty() ? DEFAULT_APPS : value.trim()).apply(); }
+    void setScoreKey(int code) { prefs.edit().putInt("score_key", code).putBoolean("capture_key", false).apply(); }
+    void setLastApp(String pkg) { prefs.edit().putString("last_app", pkg).apply(); }
+    SharedPreferences prefs() { return prefs; }
     String token() throws GeneralSecurityException {
         String saved = prefs.getString("feed_token", "");
         if (saved.isEmpty()) return "";
